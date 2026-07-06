@@ -1,0 +1,41 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  vm:
+    name: FreeBSD ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - 13.5-RELEASE
+          - 14.3-RELEASE
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup the VM
+        uses: ./.github/actions/setup-vm
+        with:
+          version: ${{ matrix.version }}
+      - name: Run commands in the guest
+        uses: ./.github/actions/run
+        with:
+          run: |
+            freebsd-version
+            uname -a
+            sysctl hw.ncpu
+      - name: Exercise ZFS in the guest
+        uses: ./.github/actions/run
+        with:
+          sync-workspace: "false"
+          run: |
+            kldload zfs
+            truncate -s 512M /tmp/ci-pool.img
+            zpool create ci-pool /tmp/ci-pool.img
+            zpool list ci-pool
+            zpool destroy ci-pool

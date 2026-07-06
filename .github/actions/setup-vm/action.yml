@@ -1,0 +1,71 @@
+name: Setup FreeBSD VM
+description: >
+  Boot a FreeBSD BASIC-CI image under QEMU on the runner and provision
+  SSH access for root.
+inputs:
+  version:
+    description: FreeBSD release, for example 14.3-RELEASE
+    required: false
+    default: 14.3-RELEASE
+  memory-mb:
+    description: Guest memory in megabytes
+    required: false
+    default: "4096"
+  cpus:
+    description: Guest CPU count
+    required: false
+    default: "2"
+  disk-size:
+    description: Size the copy-on-write disk grows to on first boot
+    required: false
+    default: "40G"
+  ssh-port:
+    description: Host port forwarded to the guest SSH port on 127.0.0.1
+    required: false
+    default: "2222"
+outputs:
+  ssh-port:
+    description: Host port that reaches the guest SSH daemon
+    value: ${{ inputs.ssh-port }}
+  ssh-key:
+    description: Path of the private key that logs in as root
+    value: ${{ steps.paths.outputs.ssh-key }}
+  known-hosts:
+    description: Path of the known_hosts file pinning the guest host key
+    value: ${{ steps.paths.outputs.known-hosts }}
+runs:
+  using: composite
+  steps:
+    - name: Install host dependencies
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+          qemu-system-x86 qemu-utils sshpass xz-utils rsync
+    - name: Restore image cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/freebsd-ci/*.xz
+        key: freebsd-ci-image-${{ inputs.version }}
+    - name: Fetch and verify the image
+      shell: bash
+      env:
+        FREEBSD_VERSION: ${{ inputs.version }}
+        WORK_IMAGE_SIZE: ${{ inputs.disk-size }}
+      run: sh "${GITHUB_ACTION_PATH}/../../../scripts/fetch-image.sh"
+    - name: Boot and provision the VM
+      shell: bash
+      env:
+        FREEBSD_VERSION: ${{ inputs.version }}
+        VM_MEMORY_MB: ${{ inputs.memory-mb }}
+        VM_CPUS: ${{ inputs.cpus }}
+        SSH_PORT: ${{ inputs.ssh-port }}
+      run: sh "${GITHUB_ACTION_PATH}/../../../scripts/provision.sh"
+    - name: Expose connection paths
+      id: paths
+      shell: bash
+      run: |
+        echo "ssh-key=${HOME}/.cache/freebsd-ci/id_ed25519" \
+          >> "${GITHUB_OUTPUT}"
+        echo "known-hosts=${HOME}/.cache/freebsd-ci/known_hosts" \
+          >> "${GITHUB_OUTPUT}"
