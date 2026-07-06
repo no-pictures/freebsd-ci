@@ -21,7 +21,7 @@ The image archive is cached between runs with `actions/cache`.
 ```yaml
 - uses: <owner>/freebsd-ci/.github/actions/setup-vm@main
   with:
-    version: 14.3-RELEASE      # any release listed in images.conf
+    version: 14.4-RELEASE      # any release listed in images.conf
     memory-mb: "4096"
     cpus: "2"
     disk-size: 40G             # the guest grows its root on first boot
@@ -46,7 +46,7 @@ The script is piped into `sh -s` on the guest, because root's login shell on Fre
 The same scripts work outside GitHub Actions on any Linux host with QEMU, for local development or other CI systems.
 
 ```sh
-export FREEBSD_VERSION=14.3-RELEASE
+export FREEBSD_VERSION=14.4-RELEASE
 sh scripts/fetch-image.sh    # download, verify, unpack, create overlay
 sh scripts/provision.sh      # first boot, install the SSH key
 sh scripts/vm.sh ssh freebsd-version
@@ -54,6 +54,7 @@ sh scripts/vm.sh down
 ```
 
 State lives in `~/.cache/freebsd-ci` and is disposable; deleting `work.qcow2` and re-running the fetch and provision scripts recreates the guest from the verified image.
+One cache directory holds one work image, so parallel VMs of different releases on the same host need a distinct `FREEBSD_CI_CACHE` and `SSH_PORT` per release.
 
 ## Supported releases
 
@@ -64,17 +65,18 @@ Adding a release is a one-line change carrying the URL and checksum.
 
 ## Performance expectations
 
-GitHub runners expose no KVM to the sandbox, so QEMU runs in TCG software emulation.
-On a stock ubuntu-latest runner the guest boots in a few minutes, and the first boot adds one automatic reboot after growing the root filesystem.
-Compute-heavy test suites run several times slower than native; the sweet spot is functional testing that exercises FreeBSD-specific interfaces such as jails, ZFS and rctl.
+The scripts use KVM whenever /dev/kvm is usable and fall back to TCG software emulation otherwise.
+GitHub runners provide KVM after the udev rule that the setup-vm action applies, and a full VM job runs in a few minutes there.
+Under the TCG fallback, boots take a few minutes and compute-heavy suites run several times slower than native, which still suits functional testing of FreeBSD-specific interfaces such as jails, ZFS and rctl.
+The first boot always adds one automatic reboot after growing the root filesystem.
 
 ## Debugging
 
-The guest console is reachable in two ways while the VM runs.
-`scripts/vm.sh console` attaches to the serial console through a unix socket, which requires socat.
-`scripts/monitor_type.py` talks to the QEMU monitor and can save a screenshot of the VGA console or type keystrokes into it, which helps when SSH never comes up:
+The serial console is mirrored into `~/.cache/freebsd-ci/serial.log`, which the provisioning script prints when SSH never comes up.
+`scripts/vm.sh console` attaches to the live serial console through a unix socket, which requires socat.
+The QEMU monitor socket answers a screendump command with a screenshot of the VGA display, for the rare case that even the serial console stays quiet:
 
 ```sh
-python3 scripts/monitor_type.py ~/.cache/freebsd-ci/mon.sock \
-    screendump /tmp/screen.png
+printf 'screendump /tmp/screen.png -f png\n' \
+    | socat - UNIX-CONNECT:${HOME}/.cache/freebsd-ci/mon.sock
 ```

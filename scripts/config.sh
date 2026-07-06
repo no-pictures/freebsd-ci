@@ -19,6 +19,7 @@ SSH_PORT="${SSH_PORT:-2222}"
 SSH_KEY="${SSH_KEY:-${CACHE_DIR}/id_ed25519}"
 PID_FILE="${CACHE_DIR}/qemu.pid"
 SERIAL_SOCKET="${CACHE_DIR}/serial.sock"
+SERIAL_LOG="${CACHE_DIR}/serial.log"
 MONITOR_SOCKET="${CACHE_DIR}/mon.sock"
 KNOWN_HOSTS="${CACHE_DIR}/known_hosts"
 
@@ -38,13 +39,25 @@ image_sha256() {
         '$1 == v { print $3 }' "${IMAGES_CONF}"
 }
 
+qemu_accel() {
+    # KVM when the device is usable, TCG emulation otherwise
+    if [ -w /dev/kvm ]; then
+        echo "kvm -cpu host"
+    else
+        echo "tcg,thread=multi -cpu max"
+    fi
+}
+
 start_qemu() {
+    # the serial console stays interactive through the unix socket
+    # and is mirrored into a logfile for headless debugging
     qemu-system-x86_64 \
-        -machine pc -accel tcg,thread=multi -cpu max \
+        -machine pc -accel $(qemu_accel) \
         -smp "${VM_CPUS}" -m "${VM_MEMORY_MB}" \
         -display none -vga std \
         -monitor "unix:${MONITOR_SOCKET},server,nowait" \
-        -serial "unix:${SERIAL_SOCKET},server,nowait" \
+        -chardev "socket,id=serial0,path=${SERIAL_SOCKET},server=on,wait=off,logfile=${SERIAL_LOG}" \
+        -serial chardev:serial0 \
         -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22" \
         -device virtio-net-pci,netdev=n0 \
         -drive "if=virtio,file=${WORK_IMAGE},format=qcow2" \

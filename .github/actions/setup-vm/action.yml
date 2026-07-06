@@ -4,9 +4,9 @@ description: >
   SSH access for root.
 inputs:
   version:
-    description: FreeBSD release, for example 14.3-RELEASE
+    description: FreeBSD release, for example 14.4-RELEASE
     required: false
-    default: 14.3-RELEASE
+    default: 14.4-RELEASE
   memory-mb:
     description: Guest memory in megabytes
     required: false
@@ -41,9 +41,20 @@ runs:
       run: |
         sudo apt-get update -qq
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-          qemu-system-x86 qemu-utils sshpass xz-utils rsync
+          qemu-system-x86 qemu-utils sshpass xz-utils
+    - name: Make KVM accessible
+      shell: bash
+      # GitHub runners expose /dev/kvm once this udev rule applies;
+      # on hosts without KVM the scripts fall back to TCG emulation
+      run: |
+        if [ -e /dev/kvm ]; then
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+        fi
     - name: Restore image cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.cache/freebsd-ci/*.xz
         key: freebsd-ci-image-${{ inputs.version }}

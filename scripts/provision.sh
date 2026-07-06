@@ -36,24 +36,29 @@ PASSWORD_SSH="sshpass -p \"\" ssh -p ${SSH_PORT} \
 
 PUBKEY="$(cat "${SSH_KEY}.pub")"
 
+# the first boot under TCG emulation takes several minutes on busy
+# CI runners, plus one automatic reboot after growing the filesystem
 echo "Waiting for SSH on port ${SSH_PORT}."
 i=0
-while [ "$i" -lt 60 ]; do
+while [ "$i" -lt 120 ]; do
     if ${KEY_SSH} -o ConnectTimeout=5 \
             "grep -qF '${PUBKEY}' /root/.ssh/authorized_keys" \
             2>/dev/null; then
         echo "Provisioning finished earlier; the VM is up."
         exit 0
     fi
-    if ${PASSWORD_SSH} root@127.0.0.1 true 2>/dev/null; then
+    # gate on the firstboot marker so provisioning does not race the
+    # automatic reboot after growing the root filesystem
+    if ${PASSWORD_SSH} root@127.0.0.1 \
+            'test ! -e /firstboot' 2>/dev/null; then
         break
     fi
     i=$((i + 1))
     sleep 10
 done
-if [ "$i" -ge 60 ]; then
-    echo "SSH did not come up; inspect the serial console:" >&2
-    echo "  sh ${SCRIPTS_DIR}/vm.sh console" >&2
+if [ "$i" -ge 120 ]; then
+    echo "SSH did not come up; last serial console output:" >&2
+    tail -n 50 "${SERIAL_LOG}" >&2 || true
     exit 1
 fi
 
@@ -62,7 +67,7 @@ printf '%s\n' \
     "mkdir -p /root/.ssh && chmod 700 /root/.ssh" \
     "echo '${PUBKEY}' > /root/.ssh/authorized_keys" \
     "chmod 600 /root/.ssh/authorized_keys" \
-    "sed -i '' -e 's/^PermitEmptyPasswords.*/PermitEmptyPasswords no/' -e 's/^PasswordAuthentication.*/PasswordAuthentication no/' -e 's/^PermitRootLogin.*/PermitRootLogin without-password/' /etc/ssh/sshd_config" \
+    "sed -i '' -e 's/^PermitEmptyPasswords.*/PermitEmptyPasswords no/' -e 's/^PasswordAuthentication.*/PasswordAuthentication no/' -e 's/^PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config" \
     "service sshd restart" \
     | ${PASSWORD_SSH} root@127.0.0.1 sh -s
 

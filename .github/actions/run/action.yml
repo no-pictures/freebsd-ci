@@ -22,12 +22,16 @@ runs:
       shell: bash
       env:
         SSH_PORT: ${{ inputs.ssh-port }}
+      # tar ships with FreeBSD while rsync would first require a
+      # package installation inside the guest
       run: |
-        rsync -a --delete --exclude=.git \
-          -e "ssh -p ${SSH_PORT} \
-            -i ${HOME}/.cache/freebsd-ci/id_ed25519 \
-            -o UserKnownHostsFile=${HOME}/.cache/freebsd-ci/known_hosts" \
-          "${GITHUB_WORKSPACE}/" root@127.0.0.1:/root/work/
+        tar -C "${GITHUB_WORKSPACE}" --exclude=.git -czf - . \
+          | ssh -p "${SSH_PORT}" \
+            -i "${HOME}/.cache/freebsd-ci/id_ed25519" \
+            -o "UserKnownHostsFile=${HOME}/.cache/freebsd-ci/known_hosts" \
+            -o BatchMode=yes \
+            root@127.0.0.1 \
+            'rm -rf /root/work && mkdir -p /root/work && tar -xzf - -C /root/work'
     - name: Run the script
       shell: bash
       env:

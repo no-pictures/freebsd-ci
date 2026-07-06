@@ -15,7 +15,8 @@ jobs:
       matrix:
         version:
           - 13.5-RELEASE
-          - 14.3-RELEASE
+          - 14.4-RELEASE
+          - 15.1-RELEASE
     steps:
       - uses: actions/checkout@v7
       - name: Setup the VM
