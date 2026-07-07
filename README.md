@@ -44,17 +44,35 @@ The script is piped into `sh -s` on the guest, because root's login shell on Fre
 ## Plain script usage
 
 The same scripts work outside GitHub Actions on any Linux host with QEMU, for local development or other CI systems.
+`run.sh` is the identical code path the `run` action uses, so a script that works locally works in CI.
 
 ```sh
 export FREEBSD_VERSION=14.4-RELEASE
-sh scripts/fetch-image.sh    # download, verify, unpack, create overlay
-sh scripts/provision.sh      # first boot, install the SSH key
-sh scripts/vm.sh ssh freebsd-version
+sh scripts/setup.sh                        # fetch, verify, boot, provision
+sh scripts/guest.sh pkg-install python3    # prepare the guest
+sh scripts/run.sh 'freebsd-version'        # sync cwd to /root/work and run
+sh scripts/run.sh -n < ./my-test-script.sh # no sync, script from stdin
 sh scripts/vm.sh down
 ```
 
-State lives in `~/.cache/freebsd-ci` and is disposable; deleting `work.qcow2` and re-running the fetch and provision scripts recreates the guest from the verified image.
+State lives in `~/.cache/freebsd-ci` and is disposable; deleting `work.qcow2` and re-running the setup script recreates the guest from the verified image.
 One cache directory holds one work image, so parallel VMs of different releases on the same host need a distinct `FREEBSD_CI_CACHE` and `SSH_PORT` per release.
+
+## Guest preparation
+
+`scripts/guest.sh` carries the preparation steps most test suites need, each idempotent and safe to re-run:
+
+```sh
+sh scripts/guest.sh pkg-repo latest        # pin the package branch
+sh scripts/guest.sh pkg-install git rsync  # bootstrap pkg and install
+sh scripts/guest.sh kld if_epair           # load and persist kernel modules
+sh scripts/guest.sh tunable kern.racct.enable=1   # loader.conf, reboots once when needed
+sh scripts/guest.sh fdescfs                # mount and persist fdescfs
+sh scripts/guest.sh zpool test-pool 8G     # file-backed ZFS pool, reimported at boot
+sh scripts/guest.sh mirror-pkg-cache ./pkg-cache  # keep packages of EOL releases
+```
+
+Boot-time tunables reboot the guest once when the running kernel does not match yet, and the file-backed pool registers in rc.local because such pools are not always reimported automatically.
 
 ## Supported releases
 

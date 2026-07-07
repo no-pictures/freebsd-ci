@@ -58,20 +58,15 @@ runs:
       with:
         path: ~/.cache/freebsd-ci/*.xz
         key: freebsd-ci-image-${{ inputs.version }}
-    - name: Fetch and verify the image
+    - name: Fetch, boot and provision the VM
       shell: bash
       env:
         FREEBSD_VERSION: ${{ inputs.version }}
         WORK_IMAGE_SIZE: ${{ inputs.disk-size }}
-      run: sh "${GITHUB_ACTION_PATH}/../../../scripts/fetch-image.sh"
-    - name: Boot and provision the VM
-      shell: bash
-      env:
-        FREEBSD_VERSION: ${{ inputs.version }}
         VM_MEMORY_MB: ${{ inputs.memory-mb }}
         VM_CPUS: ${{ inputs.cpus }}
         SSH_PORT: ${{ inputs.ssh-port }}
-      run: sh "${GITHUB_ACTION_PATH}/../../../scripts/provision.sh"
+      run: sh "${GITHUB_ACTION_PATH}/../../../scripts/setup.sh"
     - name: Expose connection paths
       id: paths
       shell: bash

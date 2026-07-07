@@ -30,13 +30,14 @@ jobs:
             freebsd-version
             uname -a
             sysctl hw.ncpu
-      - name: Exercise ZFS in the guest
+      - name: Exercise the guest helpers
+        shell: bash
+        run: |
+          sh scripts/guest.sh fdescfs
+          sh scripts/guest.sh zpool ci-pool 512M
+      - name: Destroy the test pool
         uses: ./.github/actions/run
         with:
           sync-workspace: "false"
           run: |
-            kldload zfs
-            truncate -s 512M /tmp/ci-pool.img
-            zpool create ci-pool /tmp/ci-pool.img
-            zpool list ci-pool
             zpool destroy ci-pool

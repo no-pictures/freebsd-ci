@@ -17,35 +17,17 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Synchronize the workspace
-      if: inputs.sync-workspace == 'true'
-      shell: bash
-      env:
-        SSH_PORT: ${{ inputs.ssh-port }}
-      # tar ships with FreeBSD while rsync would first require a
-      # package installation inside the guest
-      run: |
-        tar -C "${GITHUB_WORKSPACE}" --exclude=.git -czf - . \
-          | ssh -p "${SSH_PORT}" \
-            -i "${HOME}/.cache/freebsd-ci/id_ed25519" \
-            -o "UserKnownHostsFile=${HOME}/.cache/freebsd-ci/known_hosts" \
-            -o BatchMode=yes \
-            root@127.0.0.1 \
-            'rm -rf /root/work && mkdir -p /root/work && tar -xzf - -C /root/work'
     - name: Run the script
       shell: bash
+      working-directory: ${{ github.workspace }}
       env:
         SSH_PORT: ${{ inputs.ssh-port }}
         GUEST_SCRIPT: ${{ inputs.run }}
-      # root's login shell on FreeBSD is csh, so the script is piped
-      # into a POSIX shell instead of being passed as an argument
+        SYNC: ${{ inputs.sync-workspace }}
       run: |
-        {
-          echo "set -e"
-          echo "cd /root/work 2>/dev/null || cd /root"
-          printf '%s\n' "${GUEST_SCRIPT}"
-        } | ssh -p "${SSH_PORT}" \
-          -i "${HOME}/.cache/freebsd-ci/id_ed25519" \
-          -o "UserKnownHostsFile=${HOME}/.cache/freebsd-ci/known_hosts" \
-          -o BatchMode=yes \
-          root@127.0.0.1 sh -s
+        ARGS=()
+        if [ "${SYNC}" != "true" ]; then
+          ARGS+=("-n")
+        fi
+        printf '%s\n' "${GUEST_SCRIPT}" \
+          | sh "${GITHUB_ACTION_PATH}/../../../scripts/run.sh" "${ARGS[@]}"
