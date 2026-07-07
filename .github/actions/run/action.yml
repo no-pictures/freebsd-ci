@@ -1,0 +1,51 @@
+name: Run in FreeBSD VM
+description: >
+  Run a POSIX shell script inside the FreeBSD VM over SSH, optionally
+  after synchronizing the workspace into the guest.
+inputs:
+  run:
+    description: Script executed by sh inside the guest
+    required: true
+  sync-workspace:
+    description: Copy the workspace to /root/work before running
+    required: false
+    default: "true"
+  ssh-port:
+    description: Host port that reaches the guest SSH daemon
+    required: false
+    default: "2222"
+runs:
+  using: composite
+  steps:
+    - name: Synchronize the workspace
+      if: inputs.sync-workspace == 'true'
+      shell: bash
+      env:
+        SSH_PORT: ${{ inputs.ssh-port }}
+      # tar ships with FreeBSD while rsync would first require a
+      # package installation inside the guest
+      run: |
+        tar -C "${GITHUB_WORKSPACE}" --exclude=.git -czf - . \
+          | ssh -p "${SSH_PORT}" \
+            -i "${HOME}/.cache/freebsd-ci/id_ed25519" \
+            -o "UserKnownHostsFile=${HOME}/.cache/freebsd-ci/known_hosts" \
+            -o BatchMode=yes \
+            root@127.0.0.1 \
+            'rm -rf /root/work && mkdir -p /root/work && tar -xzf - -C /root/work'
+    - name: Run the script
+      shell: bash
+      env:
+        SSH_PORT: ${{ inputs.ssh-port }}
+        GUEST_SCRIPT: ${{ inputs.run }}
+      # root's login shell on FreeBSD is csh, so the script is piped
+      # into a POSIX shell instead of being passed as an argument
+      run: |
+        {
+          echo "set -e"
+          echo "cd /root/work 2>/dev/null || cd /root"
+          printf '%s\n' "${GUEST_SCRIPT}"
+        } | ssh -p "${SSH_PORT}" \
+          -i "${HOME}/.cache/freebsd-ci/id_ed25519" \
+          -o "UserKnownHostsFile=${HOME}/.cache/freebsd-ci/known_hosts" \
+          -o BatchMode=yes \
+          root@127.0.0.1 sh -s
